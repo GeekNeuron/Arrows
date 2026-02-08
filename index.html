@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>بازی Arrows - نسخه وب</title>
+    <style>
+        :root {
+            --bg-color: #2c3e50;
+            --board-bg: #34495e;
+            --block-color: #f1c40f;
+            --block-shadow: #c0392b;
+            --arrow-color: #2c3e50;
+            --gap: 10px;
+            --cell-size: 70px;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: sans-serif;
+            overflow: hidden;
+            flex-direction: column;
+        }
+
+        h1 {
+            color: white;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+
+        #game-board {
+            position: relative;
+            background-color: var(--board-bg);
+            border-radius: 15px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            /* ابعاد داینامیک توسط JS تنظیم می‌شود */
+        }
+
+        .block {
+            position: absolute;
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: var(--block-color);
+            border-radius: 12px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #d35400; /* حالت سه بعدی */
+            transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            z-index: 10;
+        }
+
+        .block:active {
+            transform: scale(0.95);
+            box-shadow: 0 2px 0 #d35400;
+        }
+
+        /* استایل فلش‌ها */
+        .arrow {
+            width: 0; 
+            height: 0; 
+            border-left: 10px solid transparent;
+            border-right: 10px solid transparent;
+            border-bottom: 20px solid var(--arrow-color);
+        }
+
+        /* جهت‌ها */
+        .up .arrow { transform: rotate(0deg); }
+        .down .arrow { transform: rotate(180deg); }
+        .left .arrow { transform: rotate(-90deg); }
+        .right .arrow { transform: rotate(90deg); }
+
+        /* انیمیشن لرزش برای حرکت غیرمجاز */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+        .shake {
+            animation: shake 0.4s;
+            animation-iteration-count: 1;
+        }
+
+        /* پیام پیروزی */
+        #win-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(46, 204, 113, 0.9);
+            padding: 20px 40px;
+            border-radius: 10px;
+            color: white;
+            font-size: 2rem;
+            display: none;
+            z-index: 100;
+            text-align: center;
+        }
+        
+        button {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+    </style>
+</head>
+<body>
+
+    <h1>Arrows Clone</h1>
+    
+    <div id="game-container" style="position: relative;">
+        <div id="game-board"></div>
+        <div id="win-msg">شما برنده شدید! <br><span style="font-size: 1rem; cursor:pointer;" onclick="initGame()">بازی مجدد</span></div>
+    </div>
+
+    <button onclick="initGame()">ریست بازی</button>
+
+    <script>
+        // تنظیمات بازی
+        const GRID_SIZE = 4; // ابعاد 4x4
+        const CELL_SIZE = 70;
+        const GAP = 10;
+        
+        const DIRECTIONS = {
+            UP: { dx: 0, dy: -1, class: 'up' },
+            DOWN: { dx: 0, dy: 1, class: 'down' },
+            LEFT: { dx: -1, dy: 0, class: 'left' },
+            RIGHT: { dx: 1, dy: 0, class: 'right' }
+        };
+
+        let blocks = [];
+        const boardEl = document.getElementById('game-board');
+
+        // مرحله نمونه (دستی چیده شده تا قابل حل باشد)
+        // 0:x, 1:y, 2:Direction
+        const levelData = [
+            {x:0, y:0, dir: 'RIGHT'}, {x:1, y:0, dir: 'DOWN'}, {x:2, y:0, dir: 'LEFT'}, {x:3, y:0, dir: 'DOWN'},
+            {x:0, y:1, dir: 'UP'},    {x:1, y:1, dir: 'RIGHT'},{x:2, y:1, dir: 'DOWN'}, {x:3, y:1, dir: 'LEFT'},
+            {x:0, y:2, dir: 'RIGHT'}, {x:1, y:2, dir: 'UP'},   {x:2, y:2, dir: 'LEFT'}, {x:3, y:2, dir: 'UP'},
+            {x:0, y:3, dir: 'UP'},    {x:1, y:3, dir: 'LEFT'}, {x:2, y:3, dir: 'UP'},   {x:3, y:3, dir: 'LEFT'}
+        ];
+
+        function initGame() {
+            boardEl.innerHTML = '';
+            blocks = [];
+            document.getElementById('win-msg').style.display = 'none';
+
+            // تنظیم ابعاد برد
+            const boardWidth = GRID_SIZE * CELL_SIZE + (GRID_SIZE + 1) * GAP;
+            boardEl.style.width = boardWidth + 'px';
+            boardEl.style.height = boardWidth + 'px';
+
+            // ساخت بلوک‌ها
+            levelData.forEach((data, index) => {
+                createBlock(index, data.x, data.y, DIRECTIONS[data.dir]);
+            });
+        }
+
+        function createBlock(id, x, y, direction) {
+            const block = document.createElement('div');
+            block.className = `block ${direction.class}`;
+            block.id = `block-${id}`;
+            
+            // افزودن فلش داخل بلوک
+            const arrow = document.createElement('div');
+            arrow.className = 'arrow';
+            block.appendChild(arrow);
+
+            // موقعیت‌دهی اولیه
+            updateBlockPosition(block, x, y);
+
+            block.onclick = () => tryMove(id);
+
+            boardEl.appendChild(block);
+            
+            blocks.push({
+                id: id,
+                el: block,
+                x: x,
+                y: y,
+                direction: direction,
+                active: true
+            });
+        }
+
+        function updateBlockPosition(el, x, y) {
+            const left = GAP + x * (CELL_SIZE + GAP);
+            const top = GAP + y * (CELL_SIZE + GAP);
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+        }
+
+        function tryMove(id) {
+            const blockObj = blocks.find(b => b.id === id);
+            if (!blockObj || !blockObj.active) return;
+
+            if (canMove(blockObj)) {
+                animateMove(blockObj);
+            } else {
+                animateShake(blockObj.el);
+            }
+        }
+
+        function canMove(block) {
+            let nextX = block.x + block.direction.dx;
+            let nextY = block.y + block.direction.dy;
+
+            // بررسی مسیر تا بینهایت (یا خارج شدن از صفحه)
+            while (nextX >= 0 && nextX < GRID_SIZE && nextY >= 0 && nextY < GRID_SIZE) {
+                // آیا بلوک دیگری در این خانه وجود دارد؟
+                const collision = blocks.find(b => b.active && b.x === nextX && b.y === nextY);
+                if (collision) {
+                    return false; // برخورد کرد، پس نمی‌تواند حرکت کند
+                }
+                nextX += block.direction.dx;
+                nextY += block.direction.dy;
+            }
+            return true; // مسیر تا بیرون صفحه باز است
+        }
+
+        function animateMove(block) {
+            block.active = false; // غیرفعال کردن منطقی
+            
+            const el = block.el;
+            const distance = 600; // مسافتی که پرتاب می‌شود
+            
+            // محاسبه مختصات نهایی (بیرون کادر)
+            const currentLeft = parseFloat(el.style.left);
+            const currentTop = parseFloat(el.style.top);
+            
+            const targetLeft = currentLeft + (block.direction.dx * distance);
+            const targetTop = currentTop + (block.direction.dy * distance);
+
+            // اعمال انیمیشن
+            el.style.transition = "all 0.6s cubic-bezier(0.55, 0.085, 0.68, 0.53)"; // افکت شتاب گرفتن
+            el.style.left = targetLeft + 'px';
+            el.style.top = targetTop + 'px';
+            el.style.opacity = '0';
+
+            // حذف از DOM بعد از اتمام انیمیشن
+            setTimeout(() => {
+                if (el.parentNode) el.parentNode.removeChild(el);
+                checkWin();
+            }, 600);
+        }
+
+        function animateShake(el) {
+            el.classList.remove('shake');
+            void el.offsetWidth; // Trigger reflow
+            el.classList.add('shake');
+        }
+
+        function checkWin() {
+            if (blocks.every(b => !b.active)) {
+                document.getElementById('win-msg').style.display = 'block';
+            }
+        }
+
+        // شروع بازی
+        initGame();
+
+    </script>
+</body>
+</html>
